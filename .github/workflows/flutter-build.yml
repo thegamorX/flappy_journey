@@ -3,9 +3,9 @@ name: Build Flutter APK
 on:
   push:
     branches: [ main ]
-    tags: [ 'v*' ]      # v1.0.0, v1.0.1, etc. will trigger a Release
+    tags: [ 'v*' ]
   pull_request:
-  workflow_dispatch:     # allows manual runs from the Actions tab
+  workflow_dispatch:
 
 jobs:
   build:
@@ -25,7 +25,6 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          # optionally pin a version, e.g. flutter-version: '3.22.3'
           cache: true
 
       - name: Flutter version
@@ -40,17 +39,20 @@ jobs:
         
       - name: Patch Gradle files for plugins
         run: |
-          # Update Kotlin version everywhere
+          # 1. Update Kotlin version everywhere
           find $HOME/.pub-cache -type f -name build.gradle \
             -exec sed -i 's/ext.kotlin_version *= *.*/ext.kotlin_version = "1.9.24"/' {} \;
 
-          # Add compileSdkVersion 34 to google_mobile_ads plugin
+          # 2. Add compileSdkVersion + Java 17 options to google_mobile_ads
           find $HOME/.pub-cache -path "*/google_mobile_ads-*/android/build.gradle" \
-            -exec sh -c 'awk "BEGIN{added=0} {print} /^android[ \t]*\\{/ && added==0 {print \"    compileSdkVersion 34\"; added=1}" "$1" > tmp && mv tmp "$1"' _ {} \;
+            -exec sh -c 'awk "BEGIN{added=0} {print} /^android[ \t]*\\{/ && added==0 { \
+                print \"    compileSdkVersion 34\"; \
+                print \"    compileOptions {\\n        sourceCompatibility JavaVersion.VERSION_17\\n        targetCompatibility JavaVersion.VERSION_17\\n    }\"; \
+                added=1 }" "$1" > tmp && mv tmp "$1"' _ {} \;
 
-          # Force Java 17 & Kotlin JVM target 17 everywhere
+          # 3. Apply Kotlin JVM target 17 globally (works for apps & libraries)
           find $HOME/.pub-cache -type f -name build.gradle \
-            -exec sh -c 'awk "BEGIN{added=0} {print} /^android[ \t]*\\{/ && added==0 {print \"    compileOptions {\\n        sourceCompatibility JavaVersion.VERSION_17\\n        targetCompatibility JavaVersion.VERSION_17\\n    }\\n\\n    kotlinOptions {\\n        jvmTarget = \\\"17\\\"\\n    }\"; added=1}" "$1" > tmp && mv tmp "$1"' _ {} \;
+            -exec sh -c 'echo "\ntasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {\n    kotlinOptions.jvmTarget = \"17\"\n}\n" >> "$1"' _ {} \;
 
       - name: Build release APK
         run: flutter build apk --release
@@ -68,4 +70,3 @@ jobs:
           files: build/app/outputs/flutter-apk/app-release*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
