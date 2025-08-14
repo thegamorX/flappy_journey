@@ -33,4 +33,54 @@ jobs:
         run: flutter pub get
 
       # 5️⃣ Patch Gradle files for JVM target & compileSdkVersion
-      - name: Patch F
+      - name: Patch Flutter plugins
+        run: |
+          # Fix JVM target mismatches for all plugins
+          find $HOME/.pub-cache -path "*/android/build.gradle" | while read gradleFile; do
+            if ! grep -q "compileOptions" "$gradleFile"; then
+              sed -i '/android {/a\
+    compileOptions {\
+        sourceCompatibility JavaVersion.VERSION_17\
+        targetCompatibility JavaVersion.VERSION_17\
+    }' "$gradleFile"
+            fi
+          done
+
+          # Patch google_mobile_ads specifically
+          ADS_GRADLE_FILE=$(find $HOME/.pub-cache -path "*/google_mobile_ads-*/android/build.gradle" | head -n 1)
+          if [ -f "$ADS_GRADLE_FILE" ]; then
+            echo "Patching $ADS_GRADLE_FILE"
+
+            # Add compileSdkVersion if missing
+            grep -q "compileSdkVersion" "$ADS_GRADLE_FILE" || \
+              sed -i '/android {/a\    compileSdkVersion 34' "$ADS_GRADLE_FILE"
+
+            # Add Kotlin JVM target if missing
+            if ! grep -q "kotlinOptions" "$ADS_GRADLE_FILE"; then
+              cat <<'EOF' >> "$ADS_GRADLE_FILE"
+
+afterEvaluate {
+    if (project.hasProperty("android")) {
+        android {
+            kotlinOptions {
+                jvmTarget = "17"
+            }
+        }
+    }
+}
+EOF
+            fi
+          else
+            echo "google_mobile_ads build.gradle not found!"
+          fi
+
+      # 6️⃣ Build APK
+      - name: Build Release APK
+        run: flutter build apk --release
+
+      # 7️⃣ Upload APK as artifact
+      - name: Upload APK
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-release
+          path: build/app/outputs/flutter-apk/app-release.apk
