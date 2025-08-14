@@ -42,30 +42,6 @@ jobs:
           find $HOME/.pub-cache -type f -name build.gradle \
             -exec sed -i 's/ext.kotlin_version *= *.*/ext.kotlin_version = "1.9.24"/' {} \;
 
-          # 2. Force compileSdkVersion 34 + Java 17 in every android {} block
+          # 2. Add compileSdkVersion & Toolchain inside android {} blocks
           find $HOME/.pub-cache -type f -name build.gradle \
-            -exec sh -c 'awk "BEGIN{added=0} {print} /^android[ \t]*\\{/ && added==0 { \
-                print \"    compileSdkVersion 34\"; \
-                print \"    compileOptions {\\n        sourceCompatibility JavaVersion.VERSION_17\\n        targetCompatibility JavaVersion.VERSION_17\\n    }\"; \
-                added=1 }" "$1" > tmp && mv tmp "$1"' _ {} \;
-
-          # 3. Add Kotlin JVM target 17 globally
-          find $HOME/.pub-cache -type f -name build.gradle \
-            -exec sh -c 'echo "\ntasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {\n    kotlinOptions.jvmTarget = \"17\"\n}\n" >> "$1"' _ {} \;
-
-      - name: Build release APK
-        run: flutter build apk --release
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk
-          path: build/app/outputs/flutter-apk/app-release*.apk
-
-      - name: Create GitHub Release (on tags)
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: build/app/outputs/flutter-apk/app-release*.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            -exec sh -c 'awk "BEGIN{added=0} {pr
