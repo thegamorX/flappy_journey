@@ -3,9 +3,9 @@ name: Build Flutter APK
 on:
   push:
     branches: [ main ]
-    tags: [ 'v*' ]      # v1.0.0, v1.0.1, etc.
+    tags: [ 'v*' ]
   pull_request:
-  workflow_dispatch:     # allows manual runs from the Actions tab
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java (Gradle requires this)
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -30,25 +30,23 @@ jobs:
       - name: Flutter version
         run: flutter --version
 
-      # Generates missing android/ios folders if not present
       - name: Ensure platforms exist
         run: flutter create .
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Patch Gradle files for plugins
+      - name: Patch Gradle files (Kotlin + JVM target)
         run: |
-          # 1. Update Kotlin version everywhere
+          # Update Kotlin version
           find $HOME/.pub-cache -type f -name build.gradle \
             -exec sed -i 's/ext.kotlin_version *= *.*/ext.kotlin_version = "1.9.24"/' {} \;
 
-          # 2. Add compileSdkVersion, compileOptions, kotlinOptions, and Java toolchain
+          # Fix JVM target mismatches
           find $HOME/.pub-cache -type f -name build.gradle | while read file; do
             awk 'BEGIN{added=0}
               {print}
               /^android[ \t]*\{/ && added==0 {
-                print "    compileSdkVersion 34"
                 print "    compileOptions {"
                 print "        sourceCompatibility JavaVersion.VERSION_17"
                 print "        targetCompatibility JavaVersion.VERSION_17"
@@ -59,26 +57,8 @@ jobs:
               }' "$file" > tmp && mv tmp "$file"
           done
 
-          # 3. Force Java 17 globally for all Java & Kotlin tasks
-          FORCE_BLOCK=$(cat <<'EOT'
-allprojects {
-    tasks.withType(JavaCompile) {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-        kotlinOptions.jvmTarget = "17"
-    }
-    java {
-        toolchain {
-            languageVersion.set(JavaLanguageVersion.of(17))
-        }
-    }
-}
-EOT
-)
-          find $HOME/.pub-cache -type f -name build.gradle -exec bash -c "echo \"$FORCE_BLOCK\" >> {}" \;
-          find android -type f -name build.gradle -exec bash -c "echo \"$FORCE_BLOCK\" >> {}" \;
+      - name: Flutter clean
+        run: flutter clean
 
       - name: Build release APK
         run: flutter build apk --release
