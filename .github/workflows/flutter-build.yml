@@ -13,33 +13,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout source code
       - name: Checkout
         uses: actions/checkout@v3
 
-      # 2️⃣ Install Flutter
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.22.0'
 
-      # 3️⃣ Install Java 17 (matches Kotlin 17 target)
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # 4️⃣ Get Flutter dependencies
       - name: Get dependencies
         run: flutter pub get
 
-      # 5️⃣ Patch Gradle files for JVM target & compileSdkVersion
       - name: Patch Flutter plugins
         run: |
           echo "Patching all plugins to use Java 17 and compileSdkVersion 34..."
-          
-          # Apply compileOptions for Java 17 to all Gradle files in plugins
+
+          # Patch all Gradle files for Java 17
           find $HOME/.pub-cache -path "*/android/build.gradle" | while read gradleFile; do
             if ! grep -q "compileOptions" "$gradleFile"; then
               sed -i '/android {/a\
@@ -62,7 +57,7 @@ jobs:
 
             # Add Kotlin JVM target if missing
             if ! grep -q "kotlinOptions" "$ADS_GRADLE_FILE"; then
-              cat <<'EOF' >> "$ADS_GRADLE_FILE"
+              cat << 'EOF' >> "$ADS_GRADLE_FILE"
 
 afterEvaluate {
     if (project.hasProperty("android")) {
@@ -79,11 +74,9 @@ EOF
             echo "google_mobile_ads build.gradle not found!"
           fi
 
-      # 6️⃣ Build the APK
       - name: Build release APK
         run: flutter build apk --release
 
-      # 7️⃣ Upload APK as artifact
       - name: Upload APK
         uses: actions/upload-artifact@v3
         with:
