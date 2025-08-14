@@ -41,13 +41,16 @@ jobs:
       - name: Patch Gradle files for plugins
         run: |
           # Update Kotlin version everywhere
-          find $HOME/.pub-cache -type f -name build.gradle -exec sed -i 's/ext.kotlin_version *= *.*/ext.kotlin_version = "1.9.24"/' {} +
+          find $HOME/.pub-cache -type f -name build.gradle \
+            -exec sed -i 's/ext.kotlin_version *= *.*/ext.kotlin_version = "1.9.24"/' {} \;
 
           # Add compileSdkVersion 34 to google_mobile_ads plugin
-          find $HOME/.pub-cache -path "*/google_mobile_ads-*/android/build.gradle" -exec awk 'BEGIN{added=0} {print} /^android[ \t]*\{/ && added==0 {print "    compileSdkVersion 34"; added=1}' {} > tmp && mv tmp {} \;
+          find $HOME/.pub-cache -path "*/google_mobile_ads-*/android/build.gradle" \
+            -exec sh -c 'awk "BEGIN{added=0} {print} /^android[ \t]*\\{/ && added==0 {print \"    compileSdkVersion 34\"; added=1}" "$1" > tmp && mv tmp "$1"' _ {} \;
 
           # Force Java 17 & Kotlin JVM target 17 everywhere
-          find $HOME/.pub-cache -type f -name build.gradle -exec awk 'BEGIN{added=0} {print} /^android[ \t]*\{/ && added==0 {print "    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }\n\n    kotlinOptions {\n        jvmTarget = \"17\"\n    }"; added=1}' {} > tmp && mv tmp {} \;
+          find $HOME/.pub-cache -type f -name build.gradle \
+            -exec sh -c 'awk "BEGIN{added=0} {print} /^android[ \t]*\\{/ && added==0 {print \"    compileOptions {\\n        sourceCompatibility JavaVersion.VERSION_17\\n        targetCompatibility JavaVersion.VERSION_17\\n    }\\n\\n    kotlinOptions {\\n        jvmTarget = \\\"17\\\"\\n    }\"; added=1}" "$1" > tmp && mv tmp "$1"' _ {} \;
 
       - name: Build release APK
         run: flutter build apk --release
