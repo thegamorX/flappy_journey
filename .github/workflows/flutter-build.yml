@@ -4,7 +4,9 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
 
 jobs:
   build:
@@ -12,30 +14,32 @@ jobs:
 
     steps:
       # 1️⃣ Checkout source code
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v3
 
       # 2️⃣ Install Flutter
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.24.3" # You can set to stable if needed
+          flutter-version: '3.22.0'
 
-      # 3️⃣ Install Java 17
-      - name: Set up JDK 17
+      # 3️⃣ Install Java 17 (matches Kotlin 17 target)
+      - name: Setup Java
         uses: actions/setup-java@v3
         with:
-          java-version: "17"
-          distribution: "temurin"
+          distribution: 'temurin'
+          java-version: '17'
 
-      # 4️⃣ Get dependencies
-      - name: Flutter Pub Get
+      # 4️⃣ Get Flutter dependencies
+      - name: Get dependencies
         run: flutter pub get
 
       # 5️⃣ Patch Gradle files for JVM target & compileSdkVersion
       - name: Patch Flutter plugins
         run: |
-          # Fix JVM target mismatches for all plugins
+          echo "Patching all plugins to use Java 17 and compileSdkVersion 34..."
+          
+          # Apply compileOptions for Java 17 to all Gradle files in plugins
           find $HOME/.pub-cache -path "*/android/build.gradle" | while read gradleFile; do
             if ! grep -q "compileOptions" "$gradleFile"; then
               sed -i '/android {/a\
@@ -52,8 +56,9 @@ jobs:
             echo "Patching $ADS_GRADLE_FILE"
 
             # Add compileSdkVersion if missing
-            grep -q "compileSdkVersion" "$ADS_GRADLE_FILE" || \
+            if ! grep -q "compileSdkVersion" "$ADS_GRADLE_FILE"; then
               sed -i '/android {/a\    compileSdkVersion 34' "$ADS_GRADLE_FILE"
+            fi
 
             # Add Kotlin JVM target if missing
             if ! grep -q "kotlinOptions" "$ADS_GRADLE_FILE"; then
@@ -74,8 +79,8 @@ EOF
             echo "google_mobile_ads build.gradle not found!"
           fi
 
-      # 6️⃣ Build APK
-      - name: Build Release APK
+      # 6️⃣ Build the APK
+      - name: Build release APK
         run: flutter build apk --release
 
       # 7️⃣ Upload APK as artifact
