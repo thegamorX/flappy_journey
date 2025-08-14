@@ -3,9 +3,9 @@ name: Build Flutter APK
 on:
   push:
     branches: [ main ]
-    tags: [ 'v*' ]
+    tags: [ 'v*' ]      # v1.0.0, v1.0.1, etc.
   pull_request:
-  workflow_dispatch:
+  workflow_dispatch:     # allows manual runs from the Actions tab
 
 jobs:
   build:
@@ -30,6 +30,7 @@ jobs:
       - name: Flutter version
         run: flutter --version
 
+      # Generates missing android/ios folders if not present
       - name: Ensure platforms exist
         run: flutter create .
 
@@ -42,6 +43,56 @@ jobs:
           find $HOME/.pub-cache -type f -name build.gradle \
             -exec sed -i 's/ext.kotlin_version *= *.*/ext.kotlin_version = "1.9.24"/' {} \;
 
-          # 2. Add compileSdkVersion & Toolchain inside android {} blocks
-          find $HOME/.pub-cache -type f -name build.gradle \
-            -exec sh -c 'awk "BEGIN{added=0} {pr
+          # 2. Add compileSdkVersion, compileOptions, kotlinOptions, and Java toolchain
+          find $HOME/.pub-cache -type f -name build.gradle | while read file; do
+            awk 'BEGIN{added=0}
+              {print}
+              /^android[ \t]*\{/ && added==0 {
+                print "    compileSdkVersion 34"
+                print "    compileOptions {"
+                print "        sourceCompatibility JavaVersion.VERSION_17"
+                print "        targetCompatibility JavaVersion.VERSION_17"
+                print "    }"
+                print "    kotlinOptions { jvmTarget = \"17\" }"
+                print "    java { toolchain { languageVersion.set(JavaLanguageVersion.of(17)) } }"
+                added=1
+              }' "$file" > tmp && mv tmp "$file"
+          done
+
+          # 3. Force Java 17 globally for all Java & Kotlin tasks
+          FORCE_BLOCK=$(cat <<'EOT'
+allprojects {
+    tasks.withType(JavaCompile) {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions.jvmTarget = "17"
+    }
+    java {
+        toolchain {
+            languageVersion.set(JavaLanguageVersion.of(17))
+        }
+    }
+}
+EOT
+)
+          find $HOME/.pub-cache -type f -name build.gradle -exec bash -c "echo \"$FORCE_BLOCK\" >> {}" \;
+          find android -type f -name build.gradle -exec bash -c "echo \"$FORCE_BLOCK\" >> {}" \;
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: build/app/outputs/flutter-apk/app-release*.apk
+
+      - name: Create GitHub Release (on tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/app-release*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
