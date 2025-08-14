@@ -37,7 +37,12 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
-
+        
+      - name: Patch Kotlin & JVM target
+        run: |
+          find $HOME/.pub-cache -type f -name build.gradle -exec sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.9.24"/' {} +
+          find $HOME/.pub-cache -type f -name build.gradle -exec sed -i '/android {/a\    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }\n\n    kotlinOptions {\n        jvmTarget = "17"\n    }' {} +
+     
       - name: Build release APK
         run: flutter build apk --release
 
