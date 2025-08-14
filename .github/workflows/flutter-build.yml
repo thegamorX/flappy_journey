@@ -1,75 +1,39 @@
-name: Build Flutter APK
+name: Flutter Build
 
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ] # v1.0.0, v1.0.1, etc.
+    branches:
+      - main
   pull_request:
-  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+      - uses: actions/checkout@v4
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
-          cache: true
-
-      - name: Flutter version
-        run: flutter --version
-
-      - name: Ensure platforms exist
-        run: flutter create .
+          flutter-version: '3.22.0'
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Upgrade dependencies to latest
-        run: flutter pub upgrade --major-versions
-
       - name: Patch Gradle files for plugins
         run: |
-          # Force Kotlin 1.9.24
-          find $HOME/.pub-cache -type f -name build.gradle \
-            -exec sed -i 's/ext.kotlin_version *= *.*/ext.kotlin_version = "1.9.24"/' {} \;
-
-          # Force compileSdkVersion 34 for plugins missing it
-          find $HOME/.pub-cache -type f -name build.gradle \
-            -exec sh -c 'awk "BEGIN{added=0} {print} /^android[ \t]*{/ && added==0 {print \"    compileSdkVersion 34\"; added=1}" "$1" > tmp && mv tmp "$1"' _ {} \;
-
-          # Force Java 17 everywhere
-          find $HOME/.pub-cache -type f -name build.gradle \
-            -exec sh -c 'awk "BEGIN{added=0} {print} /^android[ \t]*{/ && added==0 {print \"    compileOptions {\\n        sourceCompatibility JavaVersion.VERSION_17\\n        targetCompatibility JavaVersion.VERSION_17\\n    }\\n\\n    kotlinOptions {\\n        jvmTarget = \\\"17\\\"\\n    }\"; added=1}" "$1" > tmp && mv tmp "$1"' _ {} \;
-
-          # Fix kotlinOptions() missing in some plugins
-          find $HOME/.pub-cache -type f -name build.gradle \
-            -exec sh -c 'grep -q "kotlinOptions" "$1" || echo -e "\nafterEvaluate { android { if (hasProperty(\"kotlinOptions\")) { kotlinOptions.jvmTarget = \"17\" } } }" >> "$1"' _ {} \;
+          find $PUB_CACHE/hosted/pub.dev -path "*/android/build.gradle" | while read gradle_file; do
+            echo "Patching $gradle_file"
+            # Add compileSdk if not present
+            if ! grep -q "compileSdk" "$gradle_file"; then
+              sed -i '/android {/a\    compileSdk 34' "$gradle_file"
+            fi
+            # Add Java/Kotlin target configs if missing
+            if ! grep -q "kotlinOptions" "$gradle_file"; then
+              sed -i '/android {/a\    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }\n\n    kotlinOptions {\n        jvmTarget = "17"\n    }' "$gradle_file"
+            fi
+          done
 
       - name: Build release APK
         run: flutter build apk --release
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk
-          path: build/app/outputs/flutter-apk/app-release*.apk
-
-      - name: Create GitHub Release (on tags)
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: build/app/outputs/flutter-apk/app-release*.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
